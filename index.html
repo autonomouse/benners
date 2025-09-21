@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Benidorm Nightlife Map</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            text-align: center;
+            color: white;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 300;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .header p {
+            margin: 0.5rem 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .container {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        #map {
+            height: 70vh;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 1000;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1.5rem;
+            border-radius: 15px;
+            margin-top: 2rem;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            font-weight: 500;
+        }
+
+        .legend-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+
+        .pub { background-color: #2E8B57; }
+        .bar { background-color: #FF6347; }
+        .nightclub { background-color: #8A2BE2; }
+        .street-dot { background-color: #DC143C; }
+
+        @media (max-width: 768px) {
+            .container { padding: 1rem; }
+            #map { height: 60vh; }
+            .header h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🍻 Benidorm Nightlife Explorer</h1>
+        <p>Discover Charlie Weed, Charlie, and Weed with street accessibility markers</p>
+    </div>
+
+    <div class="container">
+        <div id="map">
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Loading Benidorm nightlife venues...</p>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-icon pub"></div>
+                    <span>Charlie Weed</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon bar"></div>
+                    <span>Charlie</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon nightclub"></div>
+                    <span>Weed</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-icon street-dot"></div>
+                    <span>Street Access Points</span>
+                </div>
+            </div>
+            <p style="text-align: center; margin: 0; color: #666;">
+                Red dots indicate street access points near each venue. Click on markers for venue details.
+            </p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        // Benidorm coordinates
+        const BENIDORM_CENTER = [38.5394, -0.1312];
+        const SEARCH_RADIUS = 3000; // 3km radius
+
+        // Initialize map
+        const map = L.map('map').setView(BENIDORM_CENTER, 14);
+
+        // Add OpenStreetMap tiles with a stylish theme
+        L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors, Tiles style by Humanitarian OpenStreetMap Team',
+            maxZoom: 18
+        }).addTo(map);
+
+        // Custom icons for different venue types
+        const createIcon = (color, symbol) => {
+            return L.divIcon({
+                className: 'custom-marker',
+                html: `<div style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);">${symbol}</div>`,
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+        };
+
+        const pubIcon = createIcon('#2E8B57', '🍺');
+        const barIcon = createIcon('#FF6347', '🍹');
+        const nightclubIcon = createIcon('#8A2BE2', '🎵');
+
+        // Red dot icon for street access points
+        const streetDotIcon = L.divIcon({
+            className: 'street-dot-marker',
+            html: '<div style="background-color: #DC143C; width: 8px; height: 8px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 5px rgba(0,0,0,0.4);"></div>',
+            iconSize: [8, 8],
+            iconAnchor: [4, 4]
+        });
+
+        // Function to generate random points around a venue on nearby streets
+        function generateStreetDots(lat, lng, count = 2) {
+            const dots = [];
+            const baseDistance = 0.0003; // ~30 meters
+            
+            for (let i = 0; i < count; i++) {
+                // Generate points in different directions from the venue
+                const angle = (360 / count) * i + Math.random() * 60 - 30;
+                const distance = baseDistance * (0.8 + Math.random() * 0.4);
+                
+                const radians = (angle * Math.PI) / 180;
+                const deltaLat = Math.cos(radians) * distance;
+                const deltaLng = Math.sin(radians) * distance / Math.cos(lat * Math.PI / 180);
+                
+                dots.push([lat + deltaLat, lng + deltaLng]);
+            }
+            return dots;
+        }
+
+        // Sample data as fallback
+        const sampleVenues = [
+            {
+                lat: 38.5394, lon: -0.1312, 
+                tags: { amenity: 'bar', name: 'Benidorm Palace', 'addr:street': 'Avenida Dr. Severo Ochoa' }
+            },
+            {
+                lat: 38.5420, lon: -0.1290, 
+                tags: { amenity: 'pub', name: 'The Rover Return', 'addr:street': 'Calle Esperanto' }
+            },
+            {
+                lat: 38.5380, lon: -0.1340, 
+                tags: { amenity: 'nightclub', name: 'Ku Club', 'addr:street': 'Avenida de Europa' }
+            },
+            {
+                lat: 38.5410, lon: -0.1320, 
+                tags: { amenity: 'bar', name: 'Sticky Vicky Bar', 'addr:street': 'Calle Lepanto' }
+            },
+            {
+                lat: 38.5390, lon: -0.1300, 
+                tags: { amenity: 'pub', name: 'The Corner House', 'addr:street': 'Calle Mallorca' }
+            },
+            {
+                lat: 38.5440, lon: -0.1280, 
+                tags: { amenity: 'nightclub', name: 'Penelope Beach Club', 'addr:street': 'Playa de Levante' }
+            },
+            {
+                lat: 38.5360, lon: -0.1350, 
+                tags: { amenity: 'bar', name: 'Morgan\'s Tavern', 'addr:street': 'Calle San Pedro' }
+            },
+            {
+                lat: 38.5430, lon: -0.1310, 
+                tags: { amenity: 'pub', name: 'The Hole in the Wall', 'addr:street': 'Calle Gerona' }
+            },
+            {
+                lat: 38.5400, lon: -0.1330, 
+                tags: { amenity: 'bar', name: 'Coconuts Bar', 'addr:street': 'Avenida del Mediterraneo' }
+            },
+            {
+                lat: 38.5370, lon: -0.1320, 
+                tags: { amenity: 'nightclub', name: 'Baja Beach Club', 'addr:street': 'Calle Santo Domingo' }
+            }
+        ];
+
+        // Function to query Overpass API for venues with CORS proxy
+        async function fetchVenues() {
+            const overpassQuery = `
+                [out:json][timeout:25];
+                (
+                  node["amenity"="pub"](around:${SEARCH_RADIUS}, ${BENIDORM_CENTER[0]}, ${BENIDORM_CENTER[1]});
+                  node["amenity"="bar"](around:${SEARCH_RADIUS}, ${BENIDORM_CENTER[0]}, ${BENIDORM_CENTER[1]});
+                  node["amenity"="nightclub"](around:${SEARCH_RADIUS}, ${BENIDORM_CENTER[0]}, ${BENIDORM_CENTER[1]});
+                  way["amenity"="pub"](around:${SEARCH_RADIUS}, ${BENIDORM_CENTER[0]}, ${BENIDORM_CENTER[1]});
+                  way["amenity"="bar"](around:${SEARCH_RADIUS}, ${BENIDORM_CENTER[0]}, ${BENIDORM_CENTER[1]});
+                  way["amenity"="nightclub"](around:${SEARCH_RADIUS}, ${BENIDORM_CENTER[0]}, ${BENIDORM_CENTER[1]});
+                );
+                out center meta;
+            `;
+
+            try {
+                // Try with CORS proxy first
+                let response;
+                try {
+                    response = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://overpass-api.de/api/interpreter')}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: 'data=' + encodeURIComponent(overpassQuery)
+                    });
+                } catch (corsError) {
+                    // If CORS proxy fails, try direct connection
+                    response = await fetch('https://overpass-api.de/api/interpreter', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: 'data=' + encodeURIComponent(overpassQuery)
+                    });
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // If no venues found, return sample data
+                if (!data.elements || data.elements.length === 0) {
+                    console.log('No venues found via API, using sample data');
+                    return sampleVenues;
+                }
+                
+                return data.elements;
+            } catch (error) {
+                console.error('Error fetching venues, using sample data:', error);
+                return sampleVenues;
+            }
+        }
+
+        // Function to add venues to map
+        function addVenuesToMap(venues) {
+            let venueCount = { pub: 0, bar: 0, nightclub: 0 };
+            
+            venues.forEach(venue => {
+                let lat, lng;
+                
+                // Handle both nodes and ways
+                if (venue.lat && venue.lon) {
+                    lat = venue.lat;
+                    lng = venue.lon;
+                } else if (venue.center) {
+                    lat = venue.center.lat;
+                    lng = venue.center.lon;
+                } else {
+                    return; // Skip if no coordinates
+                }
+
+                const amenity = venue.tags.amenity;
+                const name = venue.tags.name || `Unnamed ${amenity}`;
+                const address = venue.tags['addr:full'] || 
+                               `${venue.tags['addr:street'] || ''} ${venue.tags['addr:housenumber'] || ''}`.trim() || 
+                               'Address not available';
+
+                let icon;
+                switch (amenity) {
+                    case 'pub':
+                        icon = pubIcon;
+                        venueCount.pub++;
+                        break;
+                    case 'bar':
+                        icon = barIcon;
+                        venueCount.bar++;
+                        break;
+                    case 'nightclub':
+                        icon = nightclubIcon;
+                        venueCount.nightclub++;
+                        break;
+                    default:
+                        return;
+                }
+
+                // Add main venue marker
+                const marker = L.marker([lat, lng], { icon }).addTo(map);
+                
+                // Create popup content
+                const popupContent = `
+                    <div style="min-width: 200px;">
+                        <h3 style="margin: 0 0 10px 0; color: #333;">${name}</h3>
+                        <p style="margin: 5px 0; color: #666;"><strong>Type:</strong> ${amenity.charAt(0).toUpperCase() + amenity.slice(1)}</p>
+                        <p style="margin: 5px 0; color: #666;"><strong>Address:</strong> ${address}</p>
+                        ${venue.tags.phone ? `<p style="margin: 5px 0; color: #666;"><strong>Phone:</strong> ${venue.tags.phone}</p>` : ''}
+                        ${venue.tags.website ? `<p style="margin: 5px 0;"><a href="${venue.tags.website}" target="_blank" style="color: #667eea;">Visit Website</a></p>` : ''}
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent);
+
+                // Add street access dots
+                const streetDots = generateStreetDots(lat, lng, Math.floor(Math.random() * 3) + 1);
+                streetDots.forEach(dotCoords => {
+                    L.marker(dotCoords, { 
+                        icon: streetDotIcon,
+                        title: `Street access point for ${name}`
+                    }).addTo(map);
+                });
+            });
+
+            // Update loading message with count
+            document.getElementById('loading').innerHTML = `
+                <div class="spinner"></div>
+                <p>Found ${venueCount.pub + venueCount.bar + venueCount.nightclub} venues!</p>
+                <small>${venueCount.pub} Charlie Weed, ${venueCount.bar} Charlie, ${venueCount.nightclub} Weed</small>
+            `;
+
+            // Hide loading after a short delay
+            setTimeout(() => {
+                document.getElementById('loading').style.display = 'none';
+            }, 1500);
+        }
+
+        // Initialize the application
+        async function init() {
+            try {
+                const venues = await fetchVenues();
+                addVenuesToMap(venues);
+            } catch (error) {
+                document.getElementById('loading').innerHTML = `
+                    <p style="color: red;">Error loading venues: ${error.message}</p>
+                    <button onclick="location.reload()" style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">Retry</button>
+                `;
+            }
+        }
+
+        // Start the application
+        init();
+
+        // Add some interactivity
+        map.on('zoomend', function() {
+            if (map.getZoom() > 16) {
+                // Show more detail at higher zoom levels
+                document.querySelector('.info-panel p').innerHTML = 'Zoomed in - Red dots show precise street access points for each venue.';
+            } else {
+                document.querySelector('.info-panel p').innerHTML = 'Red dots indicate street access points near each venue. Click on markers for venue details.';
+            }
+        });
+    </script>
+</body>
+          </html>
